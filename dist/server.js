@@ -42,6 +42,7 @@ var SubscriptionServer = (function () {
             connectionContext.request = request;
             connectionContext.operations = {};
             var connectionClosedHandler = function (error) {
+                connectionContext.____closed = true;
                 if (error) {
                     _this.sendError(connectionContext, '', { message: error.message ? error.message : error }, message_types_1.default.GQL_CONNECTION_ERROR);
                     setTimeout(function () {
@@ -238,7 +239,7 @@ var SubscriptionServer = (function () {
                             });
                             return executionIterable;
                         }).then(function (subscription) {
-                            if (connectionContext.operations[opId] == null) {
+                            if (connectionContext.____closed) {
                                 subscription.return();
                                 throw new Error('subscription already unsubscribed!');
                             }

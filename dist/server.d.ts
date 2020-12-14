@@ -23,6 +23,7 @@ export declare type ConnectionContext = {
     operations: {
         [opId: string]: ExecutionIterator;
     };
+    ____closed?: boolean;
 };
 export interface OperationMessagePayload {
     [key: string]: any;

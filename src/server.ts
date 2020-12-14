@@ -40,6 +40,7 @@ export type ConnectionContext = {
   operations: {
     [opId: string]: ExecutionIterator,
   },
+  ____closed?: boolean
 };
 
 export interface OperationMessagePayload {
@@ -158,6 +159,7 @@ export class SubscriptionServer {
       connectionContext.operations = {};
 
       const connectionClosedHandler = (error: any) => {
+        connectionContext.____closed = true
         if (error) {
           this.sendError(
             connectionContext,
@@ -409,7 +411,7 @@ export class SubscriptionServer {
 
               return executionIterable;
             }).then((subscription: ExecutionIterator) => {
-              if (connectionContext.operations[opId] == null) {
+              if (connectionContext.____closed) {
                 // subscription already unsubscribed
                 subscription.return()
                 throw new Error('subscription already unsubscribed!')
@@ -487,4 +489,3 @@ export class SubscriptionServer {
     );
   }
 }
-
