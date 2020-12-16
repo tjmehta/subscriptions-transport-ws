@@ -2,13 +2,13 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SubscriptionServer = void 0;
 var WebSocket = require("ws");
-var message_types_1 = require("./message-types");
-var protocol_1 = require("./protocol");
-var is_object_1 = require("./utils/is-object");
 var graphql_1 = require("graphql");
-var empty_iterable_1 = require("./utils/empty-iterable");
+var protocol_1 = require("./protocol");
 var iterall_1 = require("iterall");
+var message_types_1 = require("./message-types");
+var empty_iterable_1 = require("./utils/empty-iterable");
 var is_subscriptions_1 = require("./utils/is-subscriptions");
+var is_object_1 = require("./utils/is-object");
 var parse_legacy_protocol_1 = require("./legacy/parse-legacy-protocol");
 var isWebSocketServer = function (socket) { return socket.on; };
 var SubscriptionServer = (function () {
@@ -42,7 +42,6 @@ var SubscriptionServer = (function () {
             connectionContext.request = request;
             connectionContext.operations = {};
             var connectionClosedHandler = function (error) {
-                connectionContext.____closed = true;
                 if (error) {
                     _this.sendError(connectionContext, '', { message: error.message ? error.message : error }, message_types_1.default.GQL_CONNECTION_ERROR);
                     setTimeout(function () {
@@ -170,7 +169,8 @@ var SubscriptionServer = (function () {
                             schema: _this.schema,
                         };
                         var promisedParams = Promise.resolve(baseParams);
-                        connectionContext.operations[opId] = empty_iterable_1.createEmptyIterable();
+                        var emptyIterable = empty_iterable_1.createEmptyIterable();
+                        connectionContext.operations[opId] = emptyIterable;
                         if (_this.onOperation) {
                             var messageForCallback = parsedMessage;
                             promisedParams = Promise.resolve(_this.onOperation(messageForCallback, baseParams, connectionContext.socket));
@@ -239,14 +239,23 @@ var SubscriptionServer = (function () {
                             });
                             return executionIterable;
                         }).then(function (subscription) {
-                            if (connectionContext.____closed) {
-                                subscription.return();
-                                throw new Error('subscription already unsubscribed!');
+                            if (connectionContext.operations[opId] !== emptyIterable) {
+                                throw new Error('Subscription already replaced!');
+                            }
+                            if (connectionContext.operations[opId] == null) {
+                                connectionContext.operations[opId] = subscription;
+                                throw new Error('Subscription already unsubscribed!');
                             }
                             connectionContext.operations[opId] = subscription;
+                            if (connectionContext.socket.readyState !== WebSocket.OPEN) {
+                                throw new Error('Connection closed!');
+                            }
                         }).then(function () {
                             _this.sendMessage(connectionContext, opId, message_types_1.default.SUBSCRIPTION_SUCCESS, undefined);
                         }).catch(function (e) {
+                            if (e.message === 'Subscription already replaced!') {
+                                return;
+                            }
                             if (e.errors) {
                                 _this.sendMessage(connectionContext, opId, message_types_1.default.GQL_DATA, { errors: e.errors });
                             }

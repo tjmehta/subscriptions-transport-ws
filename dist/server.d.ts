@@ -1,6 +1,6 @@
 /// <reference types="node" />
 import * as WebSocket from 'ws';
-import { ExecutionResult, GraphQLSchema, DocumentNode, ValidationContext, GraphQLFieldResolver } from 'graphql';
+import { DocumentNode, ExecutionResult, GraphQLFieldResolver, GraphQLSchema, ValidationContext } from 'graphql';
 import { IncomingMessage } from 'http';
 export declare type ExecutionIterator = AsyncIterator<ExecutionResult>;
 export interface ExecutionParams<TContext = any> {
@@ -23,7 +23,6 @@ export declare type ConnectionContext = {
     operations: {
         [opId: string]: ExecutionIterator;
     };
-    ____closed?: boolean;
 };
 export interface OperationMessagePayload {
     [key: string]: any;
