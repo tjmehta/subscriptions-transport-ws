@@ -1,23 +1,24 @@
 import * as WebSocket from 'ws';
 
-import MessageTypes from './message-types';
-import { GRAPHQL_WS, GRAPHQL_SUBSCRIPTIONS } from './protocol';
-import isObject from './utils/is-object';
 import {
-  parse,
-  ExecutionResult,
-  GraphQLSchema,
   DocumentNode,
-  validate,
-  ValidationContext,
-  specifiedRules,
+  ExecutionResult,
   GraphQLFieldResolver,
+  GraphQLSchema,
+  ValidationContext,
+  parse,
+  specifiedRules,
+  validate,
 } from 'graphql';
-import { createEmptyIterable } from './utils/empty-iterable';
+import { GRAPHQL_SUBSCRIPTIONS, GRAPHQL_WS } from './protocol';
 import { createAsyncIterator, forAwaitEach, isAsyncIterable } from 'iterall';
-import { isASubscriptionOperation } from './utils/is-subscriptions';
-import { parseLegacyProtocolMessage } from './legacy/parse-legacy-protocol';
+
 import { IncomingMessage } from 'http';
+import MessageTypes from './message-types';
+import { createEmptyIterable } from './utils/empty-iterable';
+import { isASubscriptionOperation } from './utils/is-subscriptions';
+import isObject from './utils/is-object';
+import { parseLegacyProtocolMessage } from './legacy/parse-legacy-protocol';
 
 export type ExecutionIterator = AsyncIterator<ExecutionResult>;
 
@@ -39,8 +40,7 @@ export type ConnectionContext = {
   request: IncomingMessage,
   operations: {
     [opId: string]: ExecutionIterator,
-  },
-  ____closed?: boolean
+  }
 };
 
 export interface OperationMessagePayload {
@@ -159,7 +159,6 @@ export class SubscriptionServer {
       connectionContext.operations = {};
 
       const connectionClosedHandler = (error: any) => {
-        connectionContext.____closed = true
         if (error) {
           this.sendError(
             connectionContext,
@@ -324,7 +323,8 @@ export class SubscriptionServer {
             let promisedParams = Promise.resolve(baseParams);
 
             // set an initial mock subscription to only registering opId
-            connectionContext.operations[opId] = createEmptyIterable();
+            const emptyIterable = createEmptyIterable();
+            connectionContext.operations[opId] = emptyIterable
 
             if (this.onOperation) {
               let messageForCallback: any = parsedMessage;
@@ -411,17 +411,27 @@ export class SubscriptionServer {
 
               return executionIterable;
             }).then((subscription: ExecutionIterator) => {
-              if (connectionContext.____closed) {
-                // subscription already unsubscribed
-                subscription.return()
-                throw new Error('subscription already unsubscribed!')
+              if (connectionContext.operations[opId] !== emptyIterable) {
+                throw new Error('Subscription already replaced!')
+              }
+              if (connectionContext.operations[opId] == null) {
+                connectionContext.operations[opId] = subscription;
+                throw new Error('Subscription already unsubscribed!')
               }
               connectionContext.operations[opId] = subscription;
+              if (connectionContext.socket.readyState !== WebSocket.OPEN) {
+                // connection already closed
+                throw new Error('Connection closed!')
+              }
             }).then(() => {
               // NOTE: This is a temporary code to support the legacy protocol.
               // As soon as the old protocol has been removed, this coode should also be removed.
               this.sendMessage(connectionContext, opId, MessageTypes.SUBSCRIPTION_SUCCESS, undefined);
             }).catch((e: any) => {
+              if (e.message === 'Subscription already replaced!') {
+                // ignore
+                return
+              }
               if (e.errors) {
                 this.sendMessage(connectionContext, opId, MessageTypes.GQL_DATA, { errors: e.errors });
               } else {
