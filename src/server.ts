@@ -20,6 +20,13 @@ import { isASubscriptionOperation } from './utils/is-subscriptions';
 import isObject from './utils/is-object';
 import { parseLegacyProtocolMessage } from './legacy/parse-legacy-protocol';
 
+const map = new Map()
+let counter = 0
+
+// setInterval(() => {
+//   console.log('ITERATORS: interval..', map)
+// }, 10 * 1000)
+
 export type ExecutionIterator = AsyncIterator<ExecutionResult>;
 
 export interface ExecutionParams<TContext = any> {
@@ -372,6 +379,16 @@ export class SubscriptionServer {
                 params,
               }));
             }).then(({ executionIterable, params }) => {
+              const id = counter++
+              // @ts-ignore
+              const ret = executionIterable.return
+              // @ts-ignore
+              executionIterable.return = function (...args) {
+                // console.log('ITERABLE: return!', id)
+                map.delete(id)
+                return ret.call(this, ...args)
+              }
+              map.set(id, executionIterable)
               forAwaitEach(
                 executionIterable as any,
                 (value: ExecutionResult) => {
@@ -388,9 +405,13 @@ export class SubscriptionServer {
                   this.sendMessage(connectionContext, opId, MessageTypes.GQL_DATA, result);
                 })
                 .then(() => {
+                  // console.log('ITERABLE: complete!', id)
+                  map.delete(id)
                   this.sendMessage(connectionContext, opId, MessageTypes.GQL_COMPLETE, null);
                 })
                 .catch((e: Error) => {
+                  // console.log('ITERABLE: complete!', id, e)
+                  map.delete(id)
                   let error = e;
 
                   if (params.formatError) {
@@ -411,18 +432,19 @@ export class SubscriptionServer {
 
               return executionIterable;
             }).then((subscription: ExecutionIterator) => {
-              if (connectionContext.operations[opId] !== emptyIterable) {
-                throw new Error('Subscription already replaced!')
-              }
               if (connectionContext.operations[opId] == null) {
-                connectionContext.operations[opId] = subscription;
+                subscription.return()
                 throw new Error('Subscription already unsubscribed!')
               }
-              connectionContext.operations[opId] = subscription;
-              if (connectionContext.socket.readyState !== WebSocket.OPEN) {
-                // connection already closed
-                throw new Error('Connection closed!')
+              if (connectionContext.operations[opId] !== emptyIterable) {
+                subscription.return()
+                throw new Error('Subscription already replaced!')
               }
+              if (connectionContext.socket.readyState !== WebSocket.OPEN) {
+                subscription.return()
+                throw new Error('Connection is closed!')
+              }
+              connectionContext.operations[opId] = subscription;
             }).then(() => {
               // NOTE: This is a temporary code to support the legacy protocol.
               // As soon as the old protocol has been removed, this coode should also be removed.

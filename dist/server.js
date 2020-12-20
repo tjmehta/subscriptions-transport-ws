@@ -1,4 +1,11 @@
 "use strict";
+var __spreadArrays = (this && this.__spreadArrays) || function () {
+    for (var s = 0, i = 0, il = arguments.length; i < il; i++) s += arguments[i].length;
+    for (var r = Array(s), k = 0, i = 0; i < il; i++)
+        for (var a = arguments[i], j = 0, jl = a.length; j < jl; j++, k++)
+            r[k] = a[j];
+    return r;
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SubscriptionServer = void 0;
 var WebSocket = require("ws");
@@ -10,6 +17,8 @@ var empty_iterable_1 = require("./utils/empty-iterable");
 var is_subscriptions_1 = require("./utils/is-subscriptions");
 var is_object_1 = require("./utils/is-object");
 var parse_legacy_protocol_1 = require("./legacy/parse-legacy-protocol");
+var map = new Map();
+var counter = 0;
 var isWebSocketServer = function (socket) { return socket.on; };
 var SubscriptionServer = (function () {
     function SubscriptionServer(options, socketOptionsOrServer) {
@@ -207,6 +216,17 @@ var SubscriptionServer = (function () {
                             }); });
                         }).then(function (_a) {
                             var executionIterable = _a.executionIterable, params = _a.params;
+                            var id = counter++;
+                            var ret = executionIterable.return;
+                            executionIterable.return = function () {
+                                var args = [];
+                                for (var _i = 0; _i < arguments.length; _i++) {
+                                    args[_i] = arguments[_i];
+                                }
+                                map.delete(id);
+                                return ret.call.apply(ret, __spreadArrays([this], args));
+                            };
+                            map.set(id, executionIterable);
                             iterall_1.forAwaitEach(executionIterable, function (value) {
                                 var result = value;
                                 if (params.formatResponse) {
@@ -220,9 +240,11 @@ var SubscriptionServer = (function () {
                                 _this.sendMessage(connectionContext, opId, message_types_1.default.GQL_DATA, result);
                             })
                                 .then(function () {
+                                map.delete(id);
                                 _this.sendMessage(connectionContext, opId, message_types_1.default.GQL_COMPLETE, null);
                             })
                                 .catch(function (e) {
+                                map.delete(id);
                                 var error = e;
                                 if (params.formatError) {
                                     try {
@@ -239,17 +261,19 @@ var SubscriptionServer = (function () {
                             });
                             return executionIterable;
                         }).then(function (subscription) {
-                            if (connectionContext.operations[opId] !== emptyIterable) {
-                                throw new Error('Subscription already replaced!');
-                            }
                             if (connectionContext.operations[opId] == null) {
-                                connectionContext.operations[opId] = subscription;
+                                subscription.return();
                                 throw new Error('Subscription already unsubscribed!');
                             }
-                            connectionContext.operations[opId] = subscription;
-                            if (connectionContext.socket.readyState !== WebSocket.OPEN) {
-                                throw new Error('Connection closed!');
+                            if (connectionContext.operations[opId] !== emptyIterable) {
+                                subscription.return();
+                                throw new Error('Subscription already replaced!');
                             }
+                            if (connectionContext.socket.readyState !== WebSocket.OPEN) {
+                                subscription.return();
+                                throw new Error('Connection is closed!');
+                            }
+                            connectionContext.operations[opId] = subscription;
                         }).then(function () {
                             _this.sendMessage(connectionContext, opId, message_types_1.default.SUBSCRIPTION_SUCCESS, undefined);
                         }).catch(function (e) {
