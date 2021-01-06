@@ -19,6 +19,11 @@ var is_object_1 = require("./utils/is-object");
 var parse_legacy_protocol_1 = require("./legacy/parse-legacy-protocol");
 var map = new Map();
 var counter = 0;
+if (process.env.NODE_ENV === "development") {
+    setInterval(function () {
+        console.log('ITERATORS: interval..', map);
+    }, 10 * 1000);
+}
 var isWebSocketServer = function (socket) { return socket.on; };
 var SubscriptionServer = (function () {
     function SubscriptionServer(options, socketOptionsOrServer) {

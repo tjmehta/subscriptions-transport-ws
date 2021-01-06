@@ -23,9 +23,11 @@ import { parseLegacyProtocolMessage } from './legacy/parse-legacy-protocol';
 const map = new Map()
 let counter = 0
 
-// setInterval(() => {
-//   console.log('ITERATORS: interval..', map)
-// }, 10 * 1000)
+if (process.env.NODE_ENV === "development") {
+  setInterval(() => {
+    console.log('ITERATORS: interval..', map)
+  }, 10 * 1000)
+}
 
 export type ExecutionIterator = AsyncIterator<ExecutionResult>;
 
